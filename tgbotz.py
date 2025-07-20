@@ -1,95 +1,40 @@
-import logging
-import random
-import string
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-# Set up logging for debugging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# 🔐 Your bot token
+BOT_TOKEN = "7998856824:AAHeWc0dWIqPmZsPSsn5wM4A0X1vdzFRmmw"
 
-# In-memory storage for users and referral mapping
-# In production, replace these with a persistent database.
-users = {}           # Maps user_id to a dict: {'referral_code': str, 'referrals': int, 'points': int}
-referral_to_user = {}  # Maps referral_code to the user_id who owns it
+# 🧑 Your Telegram chat ID (where contacts will be sent)
+OWNER_CHAT_ID = 7033401055
 
-def generate_referral_code(length=6):
-    """Generate a random referral code."""
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+# 🚀 /start command handler
+def start(update: Update, context: CallbackContext):
+    button = KeyboardButton("📞 Share Contact", request_contact=True)
+    reply_markup = ReplyKeyboardMarkup([[button]], resize_keyboard=True, one_time_keyboard=True)
+    update.message.reply_text("Hey! Tap below to share your phone number:", reply_markup=reply_markup)
 
-def start(update: Update, context: CallbackContext) -> None:
-    """Handle the /start command. Accept an optional referral code as argument."""
-    user = update.message.from_user
-    user_id = user.id
+# 📩 Handle contact messages
+def contact_handler(update: Update, context: CallbackContext):
+    contact = update.message.contact
+    message = (
+        f"📲 New Contact:\n\n"
+        f"👤 Name: {contact.first_name}\n"
+        f"📞 Phone: {contact.phone_number}\n"
+        f"🆔 User ID: {update.effective_user.id}"
+    )
+    context.bot.send_message(chat_id=OWNER_CHAT_ID, text=message)
+    update.message.reply_text("✅ Thanks! Got your contact.")
 
-    # Register new user if not already in the system
-    if user_id not in users:
-        referral_code = generate_referral_code()
-        users[user_id] = {'referral_code': referral_code, 'referrals': 0, 'points': 0}
-        referral_to_user[referral_code] = user_id
-        logger.info("Registered new user: %s with code %s", user.first_name, referral_code)
-
-    message = f"Hello, {user.first_name}!\n"
-    message += "Welcome to the Refer & Earn Bot.\n"
-    message += f"Your referral code is: {users[user_id]['referral_code']}\n"
-    message += "Share this code with your friends to earn rewards!\n"
-
-    # Check if the user started the bot with a referral code argument (e.g., /start REF123)
-    if context.args:
-        provided_code = context.args[0].strip().upper()
-        # Validate referral code and ensure user is not self-referring
-        if provided_code in referral_to_user and referral_to_user[provided_code] != user_id:
-            referrer_id = referral_to_user[provided_code]
-            users[referrer_id]['referrals'] += 1
-            users[referrer_id]['points'] += 10  # Award 10 points per referral (adjust as needed)
-            message += "\nReferral bonus applied for your referrer!\n"
-            logger.info("User %s referred by %s", user.first_name, referrer_id)
-        else:
-            message += "\nInvalid or self referral code provided.\n"
-
-    update.message.reply_text(message)
-
-def refer(update: Update, context: CallbackContext) -> None:
-    """Send the user their unique referral code."""
-    user = update.message.from_user
-    user_id = user.id
-
-    if user_id in users:
-        referral_code = users[user_id]['referral_code']
-        update.message.reply_text(f"Your referral code is: {referral_code}")
-    else:
-        update.message.reply_text("You are not registered. Please use /start to register.")
-
-def earn(update: Update, context: CallbackContext) -> None:
-    """Show the user their earned points and referral count."""
-    user = update.message.from_user
-    user_id = user.id
-
-    if user_id in users:
-        points = users[user_id]['points']
-        referrals = users[user_id]['referrals']
-        update.message.reply_text(
-            f"You have earned {points} points from {referrals} successful referrals."
-        )
-    else:
-        update.message.reply_text("You are not registered. Please use /start to register.")
-
+# 🔁 Main function
 def main():
-    # Replace 'YOUR_TELEGRAM_BOT_API_TOKEN' with your actual Telegram Bot API token.
-    updater = Updater("7574244377:AAHWv4GgJNXzob1XMuUJBCvLZ-rbgSTzpj8", use_context=True)
-    dispatcher = updater.dispatcher
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-    # Command handlers
-    dispatcher.add_handler(CommandHandler("start", start, pass_args=True))
-    dispatcher.add_handler(CommandHandler("refer", refer))
-    dispatcher.add_handler(CommandHandler("earn", earn))
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.contact, contact_handler))
 
-    # Start the bot
     updater.start_polling()
-    logger.info("Bot started polling...")
+    print("✅ Bot is running...")
     updater.idle()
 
 if __name__ == '__main__':
